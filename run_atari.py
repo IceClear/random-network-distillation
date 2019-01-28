@@ -12,9 +12,11 @@ from policies.cnn_policy_param_matched import CnnPolicy
 from ppo_agent import PpoAgent
 from utils import set_global_seeds
 from vec_env import VecFrameStack
+import tensorflow as tf
+import subprocess
 
 
-def train(*, env_id, num_env, hps, num_timesteps, seed):
+def train(*, env_id, num_env, hps, num_timesteps, seed, args):
     venv = VecFrameStack(
         make_atari_env(env_id, num_env, seed, wrapper_kwargs=dict(),
                        start_index=num_env * MPI.COMM_WORLD.Get_rank(),
@@ -63,6 +65,7 @@ def train(*, env_id, num_env, hps, num_timesteps, seed):
         update_ob_stats_every_step=hps.pop('update_ob_stats_every_step'),
         int_coeff=hps.pop('int_coeff'),
         ext_coeff=hps.pop('ext_coeff'),
+        args = args,
     )
     agent.start_interaction([venv])
     if hps.pop('update_ob_stats_from_random_agent'):
@@ -83,7 +86,7 @@ def train(*, env_id, num_env, hps, num_timesteps, seed):
 
 
 def add_env_params(parser):
-    parser.add_argument('--env', help='environment ID', default='MontezumaRevengeNoFrameskip-v4')
+    parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v4')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--max_episode_steps', type=int, default=4500)
 
@@ -91,8 +94,8 @@ def add_env_params(parser):
 def main():
     parser = arg_parser()
     add_env_params(parser)
-    parser.add_argument('--num-timesteps', type=int, default=int(1e12))
-    parser.add_argument('--num_env', type=int, default=32)
+    parser.add_argument('--num-timesteps', type=int, default=int(1e7))
+    parser.add_argument('--num_env', type=int, default=8)
     parser.add_argument('--use_news', type=int, default=0)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--gamma_ext', type=float, default=0.99)
@@ -104,12 +107,38 @@ def main():
     parser.add_argument('--tag', type=str, default='')
     parser.add_argument('--policy', type=str, default='rnn', choices=['cnn', 'rnn'])
     parser.add_argument('--int_coeff', type=float, default=1.)
-    parser.add_argument('--ext_coeff', type=float, default=2.)
+    parser.add_argument('--ext_coeff', type=float, default=0)
     parser.add_argument('--dynamics_bonus', type=int, default=0)
+
+    parser.add_argument('--clear-run', action='store_true', default=False,
+                        help='if clear the save folder')
+    parser.add_argument('--mega-wrapper', type=int, default=0,
+                        help='if use the same wrapper as mega')
 
 
     args = parser.parse_args()
-    logger.configure(dir=logger.get_dir(), format_strs=['stdout', 'log', 'csv'] if MPI.COMM_WORLD.Get_rank() == 0 else [])
+    args.save_dir = '../rnd_results/'
+    args.save_dir = os.path.join(args.save_dir, 'e_n-{}/'.format(args.env))
+    args.save_dir = os.path.join(args.save_dir, 'mega_wrapper-{}'.format(str(args.mega_wrapper)))
+
+    if args.clear_run:
+        '''if clear_run, clear the path before create the path'''
+        input('You have set clear_run, is that what you want?')
+        subprocess.call(["rm", "-r", args.save_dir])
+
+    try:
+        os.makedirs(args.save_dir)
+    except Exception as e:
+        print('file exists')
+
+    try:
+        os.makedirs('../rnd_log_results/'+args.env+'/')
+    except Exception as e:
+        print('log file exists')
+
+    args.summary_writer = tf.summary.FileWriter(args.save_dir)
+
+    logger.configure(dir='../rnd_log_results/'+args.env+'/', format_strs=['stdout', 'log', 'csv'] if MPI.COMM_WORLD.Get_rank() == 0 else [])
     if MPI.COMM_WORLD.Get_rank() == 0:
         with open(os.path.join(logger.get_dir(), 'experiment_tag.txt'), 'w') as f:
             f.write(args.tag)
@@ -143,7 +172,7 @@ def main():
 
     tf_util.make_session(make_default=True)
     train(env_id=args.env, num_env=args.num_env, seed=seed,
-        num_timesteps=args.num_timesteps, hps=hps)
+        num_timesteps=args.num_timesteps, hps=hps, args=args)
 
 
 if __name__ == '__main__':

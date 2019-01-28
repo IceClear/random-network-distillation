@@ -108,6 +108,7 @@ class PpoAgent(object):
                  update_ob_stats_every_step=True,
                  int_coeff=None,
                  ext_coeff=None,
+                 args = None,
                  ):
         self.lr = lr
         self.ext_coeff = ext_coeff
@@ -117,6 +118,11 @@ class PpoAgent(object):
         self.abs_scope = (tf.get_variable_scope().name + '/' + scope).lstrip('/')
         self.testing = testing
         self.comm_log = MPI.COMM_SELF
+        self.args = args
+
+        self.rew_all = None
+        self.max_all = None
+
         if comm is not None and comm.Get_size() > 1:
             self.comm_log = comm
             assert not testing or comm.Get_rank() != 0, "Worker number zero can't be testing"
@@ -241,6 +247,7 @@ class PpoAgent(object):
         eprews = MPI.COMM_WORLD.allgather(np.mean(list(self.I.statlists["eprew"])))
         local_best_rets = MPI.COMM_WORLD.allgather(self.local_best_ret)
         n_rooms = sum(MPI.COMM_WORLD.allgather([len(self.local_rooms)]), [])
+        # print('temp: ',temp)
 
         if MPI.COMM_WORLD.Get_rank() == 0:
             logger.info(f"Rooms visited {self.rooms}")
@@ -252,6 +259,39 @@ class PpoAgent(object):
             logger.info(f"Gamma {self.gamma}")
             logger.info(f"Gamma ext {self.gamma_ext}")
             logger.info(f"All scores {sorted(self.scores)}")
+
+
+            self.summary = tf.Summary()
+            if len(self.I.statlists['eprew'])>0:
+                if self.rew_all is not None:
+                    self.rew_all += self.I.statlists['eprew'][-1]
+                else:
+                    self.rew_all = self.I.statlists['eprew'][-1]
+
+                if self.max_all is not None:
+                    self.max_all += self.best_ret
+                else:
+                    self.max_all = self.best_ret
+
+                self.summary.value.add(
+                            tag = 'hierarchy_0/final_reward_extrinsic_reward_unclipped',
+                            simple_value = self.I.statlists['eprew'][-1],
+                        )
+                self.summary.value.add(
+                            tag = 'hierarchy_0/final_reward_extrinsic_reward_unclipped_all',
+                            simple_value = self.rew_all,
+                        )
+                self.summary.value.add(
+                            tag = 'hierarchy_0/extrinsic_reward_unclipped_max',
+                            simple_value = self.best_ret,
+                        )
+                self.summary.value.add(
+                            tag = 'hierarchy_0/extrinsic_reward_unclipped_max_all',
+                            simple_value = self.max_all,
+                        )
+
+                self.args.summary_writer.add_summary(self.summary, self.I.stats['tcount'])
+                self.args.summary_writer.flush()
 
 
         #Normalize intrinsic rewards.
@@ -332,6 +372,8 @@ class PpoAgent(object):
                      'ret_int': rets_int,
                      'ret_ext': rets_ext,
                      }
+
+
         if self.I.venvs[0].record_obs:
             to_record['obs'] = self.I.buf_obs[None]
         self.recorder.record(bufs=to_record,
@@ -536,7 +578,7 @@ class PpoAgent(object):
                 self.I.stats['rewtotal'] += epinfo['r']
                 # self.I.stats["best_ext_ret"] = self.best_ret
 
-
+        # print('eprew',self.I.statlists['eprew'])
         return {'update' : update_info}
 
 
