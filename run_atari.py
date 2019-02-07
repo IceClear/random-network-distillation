@@ -86,7 +86,7 @@ def train(*, env_id, num_env, hps, num_timesteps, seed, args):
 
 
 def add_env_params(parser):
-    parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v4')
+    parser.add_argument('--env', help='environment ID', default='BreakoutNoFrameskip-v4')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--max_episode_steps', type=int, default=4500)
 
@@ -95,7 +95,7 @@ def main():
     parser = arg_parser()
     add_env_params(parser)
     parser.add_argument('--num-timesteps', type=int, default=int(1e7))
-    parser.add_argument('--num_env', type=int, default=8)
+    parser.add_argument('--num_env', type=int, default=16)
     parser.add_argument('--use_news', type=int, default=0)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--gamma_ext', type=float, default=0.99)
@@ -120,6 +120,8 @@ def main():
     args.save_dir = '../rnd_results/'
     args.save_dir = os.path.join(args.save_dir, 'e_n-{}/'.format(args.env))
     args.save_dir = os.path.join(args.save_dir, 'mega_wrapper-{}'.format(str(args.mega_wrapper)))
+    args.save_dir = os.path.join(args.save_dir, 'num_env-{}'.format(str(args.num_env)))
+    args.save_dir = os.path.join(args.save_dir, 'int_coeff-{}'.format(str(args.int_coeff)))
 
     if args.clear_run:
         '''if clear_run, clear the path before create the path'''
